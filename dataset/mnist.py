@@ -8,11 +8,11 @@ class MNIST:
         #                                         ])
         if mode == 'train':
             train_dataset = datasets.MNIST('./dataset', train=True, download=True)
-            self.images = train_dataset.data
+            self.images = train_dataset.data.float()
             self.labels =train_dataset.targets
         elif mode == 'test':
             test_dataset = datasets.MNIST('./dataset', train=False, download=True)
-            self.images = test_dataset.data
+            self.images = test_dataset.data.float()
             self.labels =test_dataset.targets
 
     def __getitem__(self, index):

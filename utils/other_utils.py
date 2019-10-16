@@ -12,3 +12,5 @@ def squash(input_tensor, dim=-1, epsilon=1e-7):
     squash_factor = squared_norm / (1. + squared_norm)
     unit_vector = input_tensor / safe_norm
     return squash_factor * unit_vector
+
+
