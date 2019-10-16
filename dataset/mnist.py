@@ -1,15 +1,28 @@
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
 
 
 class MNIST:
-    def __init__(self, batch_size):
-        dataset_transform = transforms.Compose([transforms.ToTensor(),
-                                                transforms.Normalize((0.1307,), (0.3081,))
-                                                ])
+    def __init__(self, mode='train'):
+        # dataset_transform = transforms.Compose([transforms.ToTensor(),
+        #                                         transforms.Normalize((0.1307,), (0.3081,))
+        #                                         ])
+        if mode == 'train':
+            train_dataset = datasets.MNIST('./dataset', train=True, download=True)
+            self.images = train_dataset.data
+            self.labels =train_dataset.targets
+        elif mode == 'test':
+            test_dataset = datasets.MNIST('./dataset', train=False, download=True)
+            self.images = test_dataset.data
+            self.labels =test_dataset.targets
 
-        train_dataset = datasets.MNIST('../data', train=True, download=True, transform=dataset_transform)
-        test_dataset = datasets.MNIST('../data', train=False, download=True, transform=dataset_transform)
+    def __getitem__(self, index):
+        img = self.images[index].unsqueeze(0).div(255.)
+        target = self.labels[index]
 
-        self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        self.test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+        # normalization & augmentation
+        img = transforms.Normalize((0.1307,), (0.3081,))(img)
+
+        return img, target
+
+    def __len__(self):
+        return len(self.labels)

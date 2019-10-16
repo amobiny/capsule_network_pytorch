@@ -5,12 +5,21 @@ parser = OptionParser()
 
 parser.add_option('-e', '--epochs', dest='epochs', default=80, type='int',
                   help='number of epochs (default: 80)')
-parser.add_option('-b', '--batch-size', dest='batch_size', default=5, type='int',
+parser.add_option('-b', '--batch-size', dest='batch_size', default=20, type='int',
                   help='batch size (default: 16)')
 parser.add_option('--df', '--disp_freq', dest='disp_freq', default=100, type='int',
                   help='frequency of displaying the training results (default: 100)')
 parser.add_option('--vf', '--val_freq', dest='val_freq', default=500, type='int',
                   help='run validation for each <val_freq> iterations (default: 2000)')
+parser.add_option('-j', '--workers', dest='workers', default=0, type='int',
+                  help='number of data loading workers (default: 16)')
+# For data
+parser.add_option('--ih', '--img_h', dest='img_h', default=28, type='int',
+                  help='input image height (default: 28)')
+parser.add_option('--iw', '--img_w', dest='img_w', default=28, type='int',
+                  help='input image width (default: 28)')
+parser.add_option('--ic', '--img_c', dest='img_c', default=1, type='int',
+                  help='number of input channels (default: 1)')
 
 parser.add_option('--ni', '--num_iterations', dest='num_iterations', default=3, type='int',
                   help='number of routing iterations (default: 3)')
