@@ -105,7 +105,7 @@ venv.bak/
 .idea/
 dataset/MNIST/
 save/
-
+*.h5
 
 
 

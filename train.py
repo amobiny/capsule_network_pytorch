@@ -4,18 +4,19 @@ import torch.backends.cudnn as cudnn
 warnings.filterwarnings("ignore")
 from datetime import datetime
 from torch.utils.data import DataLoader
-from capsnet import CapsuleNet, CapsuleLoss
+
+from hough_capsnet import CapsuleNet, CapsuleLoss
+
 from torch.optim import Adam
 import numpy as np
 from config import options
 import torch
 import torch.nn.functional as F
-from dataset.mnist import MNIST
 from utils.eval_utils import compute_accuracy
 from utils.logger_utils import Logger
 import torch.nn as nn
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 
 def log_string(out_str):
@@ -154,7 +155,6 @@ if __name__ == '__main__':
     os.system('cp {}/capsnet.py {}'.format(BASE_DIR, save_dir))
     # bkp of train procedure
     os.system('cp {}/train.py {}'.format(BASE_DIR, save_dir))
-    os.system('cp {}/dataset/mnist.py {}'.format(BASE_DIR, save_dir))
     os.system('cp {}/config.py {}'.format(BASE_DIR, save_dir))
 
     ##################################
@@ -182,11 +182,20 @@ if __name__ == '__main__':
     ##################################
     # Load dataset
     ##################################
+    if options.data_name == 'mnist':
+        from dataset.mnist import MNIST as data
+        os.system('cp {}/dataset/mnist.py {}'.format(BASE_DIR, save_dir))
+    elif options.data_name == 'fashion_mnist':
+        from dataset.fashion_mnist import FashionMNIST as data
+        os.system('cp {}/dataset/fashion_mnist.py {}'.format(BASE_DIR, save_dir))
+    elif options.data_name == 't_mnist':
+        from dataset.mnist_translate import FashionMNIST as data
+        os.system('cp {}/dataset/fashion_mnist.py {}'.format(BASE_DIR, save_dir))
 
-    train_dataset = MNIST(mode='train')
+    train_dataset = data(mode='train')
     train_loader = DataLoader(train_dataset, batch_size=options.batch_size,
                               shuffle=True, num_workers=options.workers, drop_last=False)
-    test_dataset = MNIST(mode='test')
+    test_dataset = data(mode='test')
     test_loader = DataLoader(test_dataset, batch_size=options.batch_size,
                              shuffle=False, num_workers=options.workers, drop_last=False)
 
