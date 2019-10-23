@@ -5,7 +5,7 @@ warnings.filterwarnings("ignore")
 from datetime import datetime
 from torch.utils.data import DataLoader
 
-from hough_capsnet import CapsuleNet, CapsuleLoss
+from hough_capsnet_multichannel import CapsuleNet, CapsuleLoss
 
 from torch.optim import Adam
 import numpy as np
@@ -16,7 +16,7 @@ from utils.eval_utils import compute_accuracy
 from utils.logger_utils import Logger
 import torch.nn as nn
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2, 3'
 
 
 def log_string(out_str):
@@ -152,7 +152,7 @@ if __name__ == '__main__':
         os.makedirs(model_dir)
 
     # bkp of model def
-    os.system('cp {}/capsnet.py {}'.format(BASE_DIR, save_dir))
+    os.system('cp {}/hough_capsnet_multichannel.py {}'.format(BASE_DIR, save_dir))
     # bkp of train procedure
     os.system('cp {}/train.py {}'.format(BASE_DIR, save_dir))
     os.system('cp {}/config.py {}'.format(BASE_DIR, save_dir))
@@ -189,8 +189,11 @@ if __name__ == '__main__':
         from dataset.fashion_mnist import FashionMNIST as data
         os.system('cp {}/dataset/fashion_mnist.py {}'.format(BASE_DIR, save_dir))
     elif options.data_name == 't_mnist':
-        from dataset.mnist_translate import FashionMNIST as data
-        os.system('cp {}/dataset/fashion_mnist.py {}'.format(BASE_DIR, save_dir))
+        from dataset.mnist_translate import MNIST as data
+        os.system('cp {}/dataset/mnist_translate.py {}'.format(BASE_DIR, save_dir))
+    elif options.data_name == 'c_mnist':
+        from dataset.mnist_clutter import MNIST as data
+        os.system('cp {}/dataset/mnist_clutter.py {}'.format(BASE_DIR, save_dir))
 
     train_dataset = data(mode='train')
     train_loader = DataLoader(train_dataset, batch_size=options.batch_size,

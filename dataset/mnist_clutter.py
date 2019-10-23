@@ -9,12 +9,12 @@ class MNIST:
         #                                         transforms.Normalize((0.1307,), (0.3081,))
         #                                         ])
         if mode == 'train':
-            h5f = h5py.File('/home/cougarnet.uh.edu/amobiny/Desktop/capsule_network_pytorch/dataset/MNIST_translate.h5', 'r')
+            h5f = h5py.File('/home/cougarnet.uh.edu/amobiny/Desktop/capsule_network_pytorch/dataset/MNIST_clutter.h5', 'r')
             self.images = h5f['X_train'][:]
             self.labels = h5f['y_train'][:]
             h5f.close()
         elif mode == 'test':
-            h5f = h5py.File('/home/cougarnet.uh.edu/amobiny/Desktop/capsule_network_pytorch/dataset/MNIST_translate.h5', 'r')
+            h5f = h5py.File('/home/cougarnet.uh.edu/amobiny/Desktop/capsule_network_pytorch/dataset/MNIST_clutter.h5', 'r')
             self.images = h5f['X_test'][:]
             self.labels = h5f['y_test'][:]
             h5f.close()

@@ -67,12 +67,12 @@ class CapsuleNet(nn.Module):
         assert args.f2 % args.primary_cap_dim == 0
         self.num_primary_cap_map = int(args.f2 / args.primary_cap_dim)
         self.primary_capsules = PrimaryCapsLayer(in_channels=args.f1, out_channels=args.f2,
-                                                 kernel_size=args.k2, stride=1,
+                                                 kernel_size=args.k2, stride=2,
                                                  cap_dim=args.primary_cap_dim,
                                                  num_cap_map=self.num_primary_cap_map,
                                                  add_coord=args.add_coord)
         self.digit_capsules = DigitCapsLayer(num_digit_cap=args.num_classes,
-                                             num_prim_cap=self.num_primary_cap_map * 12 * 12,
+                                             num_prim_cap=self.num_primary_cap_map * 22 * 22,
                                              in_cap_dim=args.primary_cap_dim if not args.add_coord
                                              else args.primary_cap_dim+2,
                                              out_cap_dim=args.digit_cap_dim,
