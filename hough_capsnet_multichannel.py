@@ -5,6 +5,25 @@ from config import options
 from utils.other_utils import squash, coord_addition
 
 
+class SimNet(nn.Module):
+    def __init__(self, args):
+        super(SimNet, self).__init__()
+        self.args = args
+
+        self.sim_net = nn.Sequential(
+            nn.Linear(options.digit_cap_dim, args.h1),
+            nn.ReLU(inplace=True),
+            nn.Linear(args.h1, args.h2),
+            nn.ReLU(inplace=True),
+            nn.Linear(args.h2, args.img_h * args.img_w),
+            nn.Sigmoid()
+        )
+
+    def forward(self, imgs):
+        x = self.sim_net()
+        return x
+
+
 class PrimaryCapsLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, cap_dim, num_cap_map, add_coord):
         super(PrimaryCapsLayer, self).__init__()
@@ -32,11 +51,13 @@ class PrimaryCapsLayer(nn.Module):
 
 
 class DigitCapsLayer(nn.Module):
-    def __init__(self, num_digit_cap, num_prim_cap, num_prim_map, in_cap_dim, out_cap_dim, num_iterations):
+    def __init__(self, num_digit_cap, num_prim_cap, num_prim_map, in_cap_dim, out_cap_dim, num_iterations, use_simnet):
         super(DigitCapsLayer, self).__init__()
         self.num_prim_cap = num_prim_cap
         self.num_iterations = num_iterations
         self.out_cap_dim = out_cap_dim
+        self.use_simnet = use_simnet
+
         if options.share_weight:
             self.W = nn.Parameter(torch.randn(1, num_prim_map, 1, num_digit_cap, out_cap_dim, in_cap_dim))
             # [1, 32, 1, 10, 16, 8]
@@ -64,7 +85,10 @@ class DigitCapsLayer(nn.Module):
 
             if i != self.num_iterations - 1:
                 outputs_tiled = outputs.repeat(1, u_hat.size(1), 1, 1, 1)
-                u_produce_v = torch.matmul(u_hat.transpose(-1, -2), outputs_tiled)
+                if not self.use_simnet:
+                    u_produce_v = torch.matmul(u_hat.transpose(-1, -2), outputs_tiled)
+                else:
+                    u_produce_v = self.simnet(u_hat, outputs)
                 b_ij = b_ij + u_produce_v
         return outputs
 
@@ -91,7 +115,8 @@ class CapsuleNet(nn.Module):
                                              in_cap_dim=args.primary_cap_dim if not args.add_coord
                                              else args.primary_cap_dim+2,
                                              out_cap_dim=args.digit_cap_dim,
-                                             num_iterations=args.num_iterations)
+                                             num_iterations=args.num_iterations,
+                                             use_simnet=args.use_simnet)
 
         if args.add_decoder:
             self.decoder = nn.Sequential(
@@ -127,19 +152,19 @@ class CapsuleLoss(nn.Module):
     def __init__(self, args):
         super(CapsuleLoss, self).__init__()
         self.args = args
-        self.reconstruction_loss = nn.MSELoss(reduction='sum')
 
     def forward(self, images, labels, v_c, reconstructions):
         present_error = F.relu(self.args.m_plus - v_c, inplace=True) ** 2  # max(0, m_plus-||v_c||)^2
         absent_error = F.relu(v_c - self.args.m_minus, inplace=True) ** 2  # max(0, ||v_c||-m_minus)^2
 
         l_c = labels.float() * present_error + self.args.lambda_val * (1. - labels.float()) * absent_error
-        margin_loss = l_c.sum()
+        margin_loss = l_c.sum(dim=1).mean()
 
         reconstruction_loss = 0
         if self.args.add_decoder:
             assert torch.numel(images) == torch.numel(reconstructions)
             images = images.view(reconstructions.size()[0], -1)
-            reconstruction_loss = self.reconstruction_loss(reconstructions, images)
+            reconstruction_loss = torch.mean((reconstructions - images) ** 2)
 
-        return (margin_loss + self.args.alpha * reconstruction_loss) / images.size(0)
+        return margin_loss + self.args.alpha * reconstruction_loss
+

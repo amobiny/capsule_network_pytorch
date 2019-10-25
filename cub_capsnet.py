@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from config import options
 from utils.other_utils import squash, coord_addition
+from models import *
+import numpy as np
 
 
 class Conv2dSame(nn.Module):
@@ -34,9 +36,8 @@ class PrimaryCapsLayer(nn.Module):
         outputs = outputs.view(batch_size, self.capsule_dim, self.num_cap_map, map_dim, map_dim)
         # [bs, 8 (or 10), 32, 6, 6]
         if self.add_coord:
-            outputs = coord_addition(outputs)  # [bs, 10, 32, 6, 6]
-            outputs = outputs.view(batch_size, self.capsule_dim + 2, self.num_cap_map, -1).transpose(1, 2).transpose(2,
-                                                                                                                     3)
+            outputs = coord_addition(outputs, shuffle=options.shuffle_coords)   # [bs, 10, 32, 6, 6]
+            outputs = outputs.view(batch_size, self.capsule_dim+2, self.num_cap_map, -1).transpose(1, 2).transpose(2, 3)
             # [bs, 32, 36, 10]
         else:
             outputs = outputs.view(batch_size, self.capsule_dim, self.num_cap_map, -1).transpose(1, 2).transpose(2, 3)
@@ -80,7 +81,9 @@ class DigitCapsLayer(nn.Module):
                 outputs_tiled = outputs.repeat(1, u_hat.size(1), 1, 1, 1)
                 u_produce_v = torch.matmul(u_hat.transpose(-1, -2), outputs_tiled)
                 b_ij = b_ij + u_produce_v
-        return outputs
+        map_size = int(np.sqrt(u.size(2)))
+        c_maps = c_ij.reshape(batch_size, u.size(1), map_size, map_size, options.num_classes) # (batch_size, 32, 20, 20, 200)
+        return outputs.squeeze(1).squeeze(-1), c_maps
 
 
 class CapsuleNet(nn.Module):
@@ -89,8 +92,8 @@ class CapsuleNet(nn.Module):
         self.args = args
 
         # convolution layer
-        self.conv1 = nn.Conv2d(in_channels=args.img_c, out_channels=args.f1, kernel_size=args.k1, stride=1)
-
+        self.features = resnet50(pretrained=True)
+        self.conv1 = Conv2dSame(1024, args.f1, 1)
         # primary capsule layer
         assert args.f2 % args.primary_cap_dim == 0
         self.num_prim_map = int(args.f2 / args.primary_cap_dim)
@@ -100,10 +103,10 @@ class CapsuleNet(nn.Module):
                                                  num_cap_map=self.num_prim_map,
                                                  add_coord=args.add_coord)
         self.digit_capsules = DigitCapsLayer(num_digit_cap=args.num_classes,
-                                             num_prim_cap=12 * 12,
+                                             num_prim_cap=20 * 20,
                                              num_prim_map=self.num_prim_map,
                                              in_cap_dim=args.primary_cap_dim if not args.add_coord
-                                             else args.primary_cap_dim + 2,
+                                             else args.primary_cap_dim+2,
                                              out_cap_dim=args.digit_cap_dim,
                                              num_iterations=args.num_iterations)
 
@@ -118,9 +121,10 @@ class CapsuleNet(nn.Module):
             )
 
     def forward(self, imgs, y=None):
-        x = F.relu(self.conv1(imgs), inplace=True)
+        x = self.features.forward(imgs)
+        x = F.relu(self.conv1(x))
         x = self.primary_capsules(x)
-        x = self.digit_capsules(x).squeeze(1).squeeze(-1)
+        x, c_maps = self.digit_capsules(x)
 
         v_length = (x ** 2).sum(dim=-1) ** 0.5
 
@@ -134,26 +138,25 @@ class CapsuleNet(nn.Module):
         if self.args.add_decoder:
             img_reconst = self.decoder((x * y[:, :, None].float()).view(x.size(0), -1))
 
-        return y_pred_ohe, img_reconst, v_length
+        return y_pred_ohe, img_reconst, v_length, c_maps
 
 
 class CapsuleLoss(nn.Module):
     def __init__(self, args):
         super(CapsuleLoss, self).__init__()
         self.args = args
-        self.reconstruction_loss = nn.MSELoss(reduction='sum')
 
     def forward(self, images, labels, v_c, reconstructions):
         present_error = F.relu(self.args.m_plus - v_c, inplace=True) ** 2  # max(0, m_plus-||v_c||)^2
         absent_error = F.relu(v_c - self.args.m_minus, inplace=True) ** 2  # max(0, ||v_c||-m_minus)^2
 
         l_c = labels.float() * present_error + self.args.lambda_val * (1. - labels.float()) * absent_error
-        margin_loss = l_c.sum()
+        margin_loss = l_c.sum(dim=1).mean()
 
         reconstruction_loss = 0
         if self.args.add_decoder:
             assert torch.numel(images) == torch.numel(reconstructions)
             images = images.view(reconstructions.size()[0], -1)
-            reconstruction_loss = self.reconstruction_loss(reconstructions, images)
+            reconstruction_loss = torch.mean((reconstructions - images) ** 2)
 
-        return (margin_loss + self.args.alpha * reconstruction_loss) / images.size(0)
+        return margin_loss + self.args.alpha * reconstruction_loss

@@ -23,7 +23,7 @@ def translate(batch, width=60, height=60):
     return data
 
 
-def clutter(batch, train_data, width=60, height=60, n_patches=4):
+def clutter(batch, train_data, width=60, height=60, n_patches=6):
     """Inserts MNIST digits at random locations in larger blank background and
     adds 8 by 8 subpatches from other random MNIST digits."""
 
@@ -62,24 +62,24 @@ if __name__ == '__main__':
     train_dataset = datasets.MNIST('.', train=True, download=True)
     train_data = train_dataset.data.reshape(-1, 28, 28, 1).numpy()
     train_label = train_dataset.targets.numpy()
-    train_data_translated = torch.tensor(np.squeeze(translate(train_data, W, H)))
+    # train_data_translated = torch.tensor(np.squeeze(translate(train_data, W, H)))
 
     test_dataset = datasets.MNIST('.', train=False, download=True)
     test_data = test_dataset.data.reshape(-1, 28, 28, 1).numpy()
     test_label = test_dataset.targets.numpy()
-    test_data_translated = torch.tensor(np.squeeze(translate(test_data, W, H)))
+    # test_data_translated = torch.tensor(np.squeeze(translate(test_data, W, H)))
 
-    h5f = h5py.File('MNIST_translate.h5', 'w')
-    h5f.create_dataset('X_train', data=train_data_translated)
-    h5f.create_dataset('y_train', data=train_label)
-    h5f.create_dataset('X_test', data=test_data_translated)
-    h5f.create_dataset('y_test', data=test_label)
-    h5f.close()
+    # h5f = h5py.File('MNIST_translate.h5', 'w')
+    # h5f.create_dataset('X_train', data=train_data_translated)
+    # h5f.create_dataset('y_train', data=train_label)
+    # h5f.create_dataset('X_test', data=test_data_translated)
+    # h5f.create_dataset('y_test', data=test_label)
+    # h5f.close()
 
     train_data_cluttered = torch.tensor(np.squeeze(clutter(train_data, train_data, W, H)))
     test_data_cluttered = torch.tensor(np.squeeze(clutter(test_data, test_data, W, H)))
 
-    h5f = h5py.File('MNIST_cluttered.h5', 'w')
+    h5f = h5py.File('MNIST_clutter.h5', 'w')
     h5f.create_dataset('X_train', data=train_data_cluttered)
     h5f.create_dataset('y_train', data=train_label)
     h5f.create_dataset('X_test', data=test_data_cluttered)

@@ -5,6 +5,19 @@ from config import options
 from utils.other_utils import squash, coord_addition
 
 
+class Conv2dSame(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, bias=True, padding_layer=nn.ReflectionPad2d):
+        super().__init__()
+        ka = kernel_size // 2
+        kb = ka - 1 if kernel_size % 2 == 0 else ka
+        self.net = nn.Sequential(
+            padding_layer((ka, kb, ka, kb)),
+            nn.Conv2d(in_channels, out_channels, kernel_size, bias=bias))
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class PrimaryCapsLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, cap_dim, num_cap_map, add_coord):
         super(PrimaryCapsLayer, self).__init__()
@@ -18,29 +31,44 @@ class PrimaryCapsLayer(nn.Module):
         batch_size = x.size(0)
         outputs = self.conv_out(x)
         map_dim = outputs.size(-1)
-        outputs = outputs.view(batch_size, self.capsule_dim, self.num_cap_map, map_dim, map_dim)    # [bs, 256, 1, 6, 6]
+        outputs = outputs.view(batch_size, self.capsule_dim, self.num_cap_map, map_dim, map_dim)
+        # [bs, 8 (or 10), 32, 6, 6]
         if self.add_coord:
-            outputs = coord_addition(outputs)   # [bs, 258, 1, 6, 6]
-            outputs = outputs.view(batch_size, self.capsule_dim+2, -1).transpose(-1, -2)             # [bs, 36, 258]
+            outputs = coord_addition(outputs)  # [bs, 10, 32, 6, 6]
+            outputs = outputs.view(batch_size, self.capsule_dim + 2, self.num_cap_map, -1).transpose(1, 2).transpose(2,
+                                                                                                                     3)
+            # [bs, 32, 36, 10]
         else:
-            outputs = outputs.view(batch_size, self.capsule_dim, -1).transpose(-1, -2)               # [bs, 36, 256]
+            outputs = outputs.view(batch_size, self.capsule_dim, self.num_cap_map, -1).transpose(1, 2).transpose(2, 3)
+            # [bs, 32, 36, 8]
         outputs = squash(outputs)
         return outputs
 
 
 class DigitCapsLayer(nn.Module):
-    def __init__(self, num_digit_cap, num_prim_cap, in_cap_dim, out_cap_dim, num_iterations):
+    def __init__(self, num_digit_cap, num_prim_cap, num_prim_map, in_cap_dim, out_cap_dim, num_iterations):
         super(DigitCapsLayer, self).__init__()
         self.num_prim_cap = num_prim_cap
         self.num_iterations = num_iterations
-        self.W = nn.Parameter(torch.randn(1, 1, num_digit_cap, out_cap_dim, in_cap_dim))
-        # [1, 1, 10, 16, 8]
+        self.out_cap_dim = out_cap_dim
+        if options.share_weight:
+            self.W = nn.Parameter(torch.randn(1, num_prim_map, 1, num_digit_cap, out_cap_dim, in_cap_dim))
+            # [1, 32, 1, 10, 16, 8]
+        else:
+            self.W = nn.Parameter(torch.randn(1, num_prim_map, num_prim_cap, num_digit_cap, out_cap_dim, in_cap_dim))
+            # [1, 32, 36, 10, 16, 8]
 
     def forward(self, x):
-        batch_size = x.size(0)  # [bs, num_primary_caps, primary_cap_dim]
-        W = self.W.repeat(batch_size, self.num_prim_cap, 1, 1, 1)
-        u = x[:, :, None, :, None].repeat(1, 1, options.num_classes, 1, 1)
+        batch_size = x.size(0)  # [bs, num_prim_map, num_prim_cap, primary_cap_dim]
+        if options.share_weight:
+            W = self.W.repeat(batch_size, 1, self.num_prim_cap, 1, 1, 1)
+        else:
+            W = self.W.repeat(batch_size, 1, 1, 1, 1, 1)
+
+        u = x[:, :, :, None, :, None].repeat(1, 1, 1, options.num_classes, 1, 1)
         u_hat = torch.matmul(W, u)
+        u_hat = u_hat.view(batch_size, -1, options.num_classes, self.out_cap_dim, 1)
+        # [10, 32, 36, 10, 16, 1] --> [10, 1152, 10, 16, 1]
 
         b_ij = torch.zeros(batch_size, u_hat.size(1), u_hat.size(2), 1, 1).cuda()
         for i in range(self.num_iterations):
@@ -65,16 +93,17 @@ class CapsuleNet(nn.Module):
 
         # primary capsule layer
         assert args.f2 % args.primary_cap_dim == 0
-        self.num_primary_cap_map = int(args.f2 / args.primary_cap_dim)
+        self.num_prim_map = int(args.f2 / args.primary_cap_dim)
         self.primary_capsules = PrimaryCapsLayer(in_channels=args.f1, out_channels=args.f2,
-                                                 kernel_size=args.k2, stride=2,
+                                                 kernel_size=args.k2, stride=1,
                                                  cap_dim=args.primary_cap_dim,
-                                                 num_cap_map=self.num_primary_cap_map,
+                                                 num_cap_map=self.num_prim_map,
                                                  add_coord=args.add_coord)
         self.digit_capsules = DigitCapsLayer(num_digit_cap=args.num_classes,
-                                             num_prim_cap=self.num_primary_cap_map * 22 * 22,
+                                             num_prim_cap=12 * 12,
+                                             num_prim_map=self.num_prim_map,
                                              in_cap_dim=args.primary_cap_dim if not args.add_coord
-                                             else args.primary_cap_dim+2,
+                                             else args.primary_cap_dim + 2,
                                              out_cap_dim=args.digit_cap_dim,
                                              num_iterations=args.num_iterations)
 

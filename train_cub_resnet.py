@@ -5,7 +5,7 @@ warnings.filterwarnings("ignore")
 from datetime import datetime
 from torch.utils.data import DataLoader
 
-from cub_capsnet import CapsuleNet, CapsuleLoss
+from models import *
 
 from torch.optim import Adam
 import numpy as np
@@ -33,7 +33,7 @@ def train():
     for epoch in range(options.epochs):
         log_string('**' * 30)
         log_string('Training Epoch %03d, Learning Rate %g' % (epoch + 1, optimizer.param_groups[0]['lr']))
-        capsule_net.train()
+        net.train()
 
         train_loss = 0
         targets, predictions = [], []
@@ -41,17 +41,19 @@ def train():
         for batch_id, (data, target) in enumerate(train_loader):
             data, target = data.cuda(), target.cuda()
             global_step += 1
-            target = F.one_hot(target, options.num_classes)
+            target_ohe = F.one_hot(target, options.num_classes)
 
             optimizer.zero_grad()
-            y_pred, x_reconst, v_length = capsule_net(data, target)
-            loss = capsule_loss(data, target, v_length, x_reconst)
-            loss.backward()
+            y_pred = F.log_softmax(net(data), dim=1)
+            batch_loss = F.nll_loss(y_pred, target)
+
+            optimizer.zero_grad()
+            batch_loss.backward()
             optimizer.step()
 
-            targets += [target]
+            targets += [target_ohe]
             predictions += [y_pred]
-            train_loss += loss.item()
+            train_loss += batch_loss.item()
 
             if (batch_id + 1) % options.disp_freq == 0:
                 train_loss /= (options.batch_size * options.disp_freq)
@@ -71,7 +73,7 @@ def train():
                 best_loss, best_acc = evaluate(best_loss=best_loss,
                                                best_acc=best_acc,
                                                global_step=global_step)
-                capsule_net.train()
+                net.train()
 
 
 @torch.no_grad()
@@ -80,19 +82,19 @@ def evaluate(**kwargs):
     best_acc = kwargs['best_acc']
     global_step = kwargs['global_step']
 
-    capsule_net.eval()
+    net.eval()
     test_loss = 0
     targets, predictions = [], []
 
     for batch_id, (data, target) in enumerate(test_loader):
         data, target = data.cuda(), target.cuda()
-        target = F.one_hot(target, options.num_classes)
-        y_pred, x_reconst, v_length = capsule_net(data, target)
-        loss = capsule_loss(data, target, v_length, x_reconst)
+        target_ohe = F.one_hot(target, options.num_classes)
+        y_pred = F.log_softmax(net(data), dim=1)
+        batch_loss = F.nll_loss(y_pred, target)
 
-        targets += [target]
+        targets += [target_ohe]
         predictions += [y_pred]
-        test_loss += loss
+        test_loss += batch_loss
 
     test_loss /= (len(test_loader) * options.batch_size)
     test_acc = compute_accuracy(torch.cat(targets), torch.cat(predictions))
@@ -115,7 +117,7 @@ def evaluate(**kwargs):
         test_logger.scalar_summary(tag, value, global_step)
 
     # save checkpoint model
-    state_dict = capsule_net.state_dict()
+    state_dict = net.state_dict()
     for key in state_dict.keys():
         state_dict[key] = state_dict[key].cpu()
     save_path = os.path.join(model_dir, '{}.ckpt'.format(global_step))
@@ -160,23 +162,26 @@ if __name__ == '__main__':
     ##################################
     # Create the model
     ##################################
-    capsule_net = CapsuleNet(options)
+    net = resnet50(pretrained=True)
+    net.aux_logits = False
+    net.fc = nn.Linear(net.fc.in_features, options.num_classes)
+
     log_string('Model Generated.')
-    log_string("Number of trainable parameters: {}".format(sum(param.numel() for param in capsule_net.parameters())))
+    log_string("Number of trainable parameters: {}".format(sum(param.numel() for param in net.parameters())))
 
     ##################################
     # Use cuda
     ##################################
     cudnn.benchmark = True
-    capsule_net.cuda()
-    capsule_net = nn.DataParallel(capsule_net)
+    net.cuda()
+    net = nn.DataParallel(net)
 
     ##################################
     # Loss and Optimizer
     ##################################
 
-    capsule_loss = CapsuleLoss(options)
-    optimizer = Adam(capsule_net.parameters())
+    loss = nn.CrossEntropyLoss()
+    optimizer = Adam(net.parameters())
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.9)
 
     ##################################
@@ -198,10 +203,10 @@ if __name__ == '__main__':
         from dataset.dataset_CUB import CUB as data
         os.system('cp {}/dataset/dataset_CUB.py {}'.format(BASE_DIR, save_dir))
 
-    train_dataset = data(mode='train')
+    train_dataset = data(mode='train', data_len=500)
     train_loader = DataLoader(train_dataset, batch_size=options.batch_size,
                               shuffle=True, num_workers=options.workers, drop_last=False)
-    test_dataset = data(mode='test')
+    test_dataset = data(mode='test', data_len=500)
     test_loader = DataLoader(test_dataset, batch_size=options.batch_size,
                              shuffle=False, num_workers=options.workers, drop_last=False)
 
