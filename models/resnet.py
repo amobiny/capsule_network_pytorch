@@ -173,7 +173,7 @@ class ResNet(nn.Module):
             self.layer1,
             self.layer2,
             self.layer3,
-            self.layer4,
+            # self.layer4,
         )
 
     def load_state_dict(self, state_dict, strict=True):

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from config import options
 from utils.other_utils import squash, coord_addition
+import numpy as np
 
 
 class SimNet(nn.Module):
@@ -90,7 +91,10 @@ class DigitCapsLayer(nn.Module):
                 else:
                     u_produce_v = self.simnet(u_hat, outputs)
                 b_ij = b_ij + u_produce_v
-        return outputs
+        map_size = int(np.sqrt(u.size(2)))
+        c_maps = c_ij.reshape(batch_size, u.size(1), map_size, map_size, options.num_classes)
+        # (batch_size, 32, 22, 22, 10)
+        return outputs.squeeze(1).squeeze(-1), c_maps
 
 
 class CapsuleNet(nn.Module):
@@ -110,7 +114,7 @@ class CapsuleNet(nn.Module):
                                                  num_cap_map=self.num_prim_map,
                                                  add_coord=args.add_coord)
         self.digit_capsules = DigitCapsLayer(num_digit_cap=args.num_classes,
-                                             num_prim_cap=6 * 6,
+                                             num_prim_cap=22 * 22,
                                              num_prim_map=self.num_prim_map,
                                              in_cap_dim=args.primary_cap_dim if not args.add_coord
                                              else args.primary_cap_dim+2,
@@ -131,7 +135,7 @@ class CapsuleNet(nn.Module):
     def forward(self, imgs, y=None):
         x = F.relu(self.conv1(imgs), inplace=True)
         x = self.primary_capsules(x)
-        x = self.digit_capsules(x).squeeze(1).squeeze(-1)
+        x, c_maps = self.digit_capsules(x)
 
         v_length = (x ** 2).sum(dim=-1) ** 0.5
 
@@ -145,7 +149,7 @@ class CapsuleNet(nn.Module):
         if self.args.add_decoder:
             img_reconst = self.decoder((x * y[:, :, None].float()).view(x.size(0), -1))
 
-        return y_pred_ohe, img_reconst, v_length
+        return y_pred_ohe, img_reconst, v_length, c_maps
 
 
 class CapsuleLoss(nn.Module):

@@ -5,11 +5,11 @@ parser = OptionParser()
 
 parser.add_option('-e', '--epochs', dest='epochs', default=200, type='int',
                   help='number of epochs (default: 80)')
-parser.add_option('-b', '--batch-size', dest='batch_size', default=1, type='int',
+parser.add_option('-b', '--batch-size', dest='batch_size', default=2, type='int',
                   help='batch size (default: 16)')
-parser.add_option('--df', '--disp_freq', dest='disp_freq', default=2, type='int',
+parser.add_option('--df', '--disp_freq', dest='disp_freq', default=10, type='int',
                   help='frequency of displaying the training results (default: 100)')
-parser.add_option('--vf', '--val_freq', dest='val_freq', default=5, type='int',
+parser.add_option('--vf', '--val_freq', dest='val_freq', default=100, type='int',
                   help='run validation for each <val_freq> iterations (default: 2000)')
 parser.add_option('-j', '--workers', dest='workers', default=0, type='int',
                   help='number of data loading workers (default: 16)')
@@ -43,8 +43,8 @@ parser.add_option('--sd', '--save-dir', dest='save_dir', default='./save',
                   help='saving directory of .ckpt models (default: ./save)')
 
 # For CapsNet
-parser.add_option('--fe', '--feature_extractor', dest='feature_extractor', default='inception',
-                  help='densenet, resnet, inception (default: resnet)')
+parser.add_option('--fe', '--feature_extractor', dest='feature_extractor', default='resnet',
+                  help='densenet, resnet(default: resnet)')
 
 parser.add_option('--f1', '--f1', dest='f1', default=512, type='int',
                   help='number of filters for the conv1 layer (default: 256)')

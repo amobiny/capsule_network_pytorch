@@ -92,8 +92,20 @@ class CapsuleNet(nn.Module):
         self.args = args
 
         # convolution layer
-        self.features = resnet50(pretrained=True)
-        self.conv1 = Conv2dSame(1024, args.f1, 1)
+        if options.feature_extractor == 'resnet':
+            net = resnet50(pretrained=True)
+            self.num_features = 1024
+        elif options.feature_extractor == 'densent':
+            net = densenet121(pretrained=True)
+            self.num_features = 1024
+        elif options.feature_extractor == 'inception':
+            net = inception_v3(pretrained=True)
+            self.num_features = 768
+
+        self.features = net.get_features()
+
+        self.conv1 = Conv2dSame(self.num_features, args.f1, 1)
+
         # primary capsule layer
         assert args.f2 % args.primary_cap_dim == 0
         self.num_prim_map = int(args.f2 / args.primary_cap_dim)
@@ -103,7 +115,7 @@ class CapsuleNet(nn.Module):
                                                  num_cap_map=self.num_prim_map,
                                                  add_coord=args.add_coord)
         self.digit_capsules = DigitCapsLayer(num_digit_cap=args.num_classes,
-                                             num_prim_cap=20 * 20,
+                                             num_prim_cap=18 * 18,
                                              num_prim_map=self.num_prim_map,
                                              in_cap_dim=args.primary_cap_dim if not args.add_coord
                                              else args.primary_cap_dim+2,
@@ -124,7 +136,7 @@ class CapsuleNet(nn.Module):
         x = self.features.forward(imgs)
         x = F.relu(self.conv1(x))
         x = self.primary_capsules(x)
-        x, c_maps = self.digit_capsules(x)
+        x, attention_maps = self.digit_capsules(x)
 
         v_length = (x ** 2).sum(dim=-1) ** 0.5
 
@@ -138,7 +150,30 @@ class CapsuleNet(nn.Module):
         if self.args.add_decoder:
             img_reconst = self.decoder((x * y[:, :, None].float()).view(x.size(0), -1))
 
-        return y_pred_ohe, img_reconst, v_length, c_maps
+        # Generate Attention Map
+        batch_size, NUM_MAPS, H, W, _ = attention_maps.size()
+        if self.training:
+            # Randomly choose one of attention maps ck
+            k_indices = np.random.randint(NUM_MAPS, size=batch_size)
+            attention_map = attention_maps[torch.arange(batch_size), k_indices, :, :, y.argmax(dim=1)].to(torch.device("cuda"))
+            if len(attention_map.size()) == 3:  # for batch_size=1
+                attention_map = attention_map.unsqueeze(0)
+            # (B, 1, H, W)
+        else:
+            attention_maps = attention_maps[torch.arange(batch_size), :, :, :, y.argmax(dim=1)].to(torch.device("cuda"))
+            # (B, NUM_MAPS, H, W)
+
+            # Object Localization Am = mean(sum(Ak))
+            attention_map = torch.mean(attention_maps, dim=1, keepdim=True)  # (B, 1, H, W)
+
+        # Normalize Attention Map
+        attention_map = attention_map.view(batch_size, -1)  # (B, H * W)
+        attention_map_max, _ = attention_map.max(dim=1, keepdim=True)  # (B, 1)
+        attention_map_min, _ = attention_map.min(dim=1, keepdim=True)  # (B, 1)
+        attention_map = (attention_map - attention_map_min) / (attention_map_max - attention_map_min)  # (B, H * W)
+        attention_map = attention_map.view(batch_size, 1, H, W)  # (B, 1, H, W)
+
+        return y_pred_ohe, img_reconst, v_length, attention_map
 
 
 class CapsuleLoss(nn.Module):
